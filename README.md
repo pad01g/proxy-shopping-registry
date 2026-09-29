@@ -78,6 +78,10 @@ point it at another network configuration. The tool `registry_entry` writes the 
 Without the bundle URL, clients fetch the same events from the relays; the bundle only helps when relays have
 dropped them.
 
+**Pull requests are welcome.** Listing yourself here is optional: the network is permissionless, so you can also run
+your own coordinator and operator keys (or fork this registry for your community) and publish your own lists — see
+https://pad01g.github.io/proxy-shopping-docs/en/quickstart/ (section 3).
+
 ## Roles
 
 | Role | What it means | How to get it |
