@@ -4,6 +4,8 @@ The trust registry of the public **`ps-main`** network of [proxy-shopping](https
 (a P2P network where somebody buys for you, paid in crypto, in shops that take only cash or local payments).
 [日本語](#日本語)
 
+Documentation in 14 languages: https://pad01g.github.io/proxy-shopping-docs/
+
 A merged pull request is the approval. After every merge, CI signs the events with the keys of the registry
 and publishes them to the ps-main relays and to GitHub Pages:
 
