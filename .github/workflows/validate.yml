@@ -32,7 +32,6 @@ jobs:
       # Compatibility with the web client's parsers. Skipped with a notice while pad01g/proxy-shopping-web is not public.
       - name: Check out proxy-shopping-web (for the compatibility test)
         id: web
-        continue-on-error: true
         uses: actions/checkout@v5
         with:
           repository: pad01g/proxy-shopping-web

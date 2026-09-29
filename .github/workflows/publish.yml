@@ -29,7 +29,6 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Check out proxy-shopping-web (TS core parsers)
         id: web
-        continue-on-error: true
         uses: actions/checkout@v5
         with:
           repository: pad01g/proxy-shopping-web
@@ -37,7 +36,6 @@ jobs:
           persist-credentials: false
       - name: Check out proxy-shopping-go (Go trust store)
         id: go
-        continue-on-error: true
         uses: actions/checkout@v5
         with:
           repository: pad01g/proxy-shopping-go
