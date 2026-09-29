@@ -65,8 +65,15 @@ chain:
   btc: {network: signet, esplora: "https://mempool.space/signet/api"}
 ```
 
-**MCP server** (proxy-shopping-web `packages/mcp`): give it the same network, relays, coordinator and trust bundle
-URL (see its README for the variable names).
+**MCP server** (`io.github.pad01g/proxy-shopping`, proxy-shopping-web `packages/mcp`): its default network
+`ps-main` already uses this registry (coordinator, `coordinators.json` directory and `events.json` bundle):
+
+```sh
+claude mcp add proxy-shopping -- docker run -i --rm -v proxy-shopping-mcp:/data ghcr.io/pad01g/proxy-shopping-mcp:0.1.0
+```
+
+`PS_COORDINATORS` replaces the trusted coordinators (comma separated pubkeys); `PS_CONFIG_URL` / `PS_CONFIG_FILE`
+point it at another network configuration. The tool `registry_entry` writes the file for your pull request here.
 
 Without the bundle URL, clients fetch the same events from the relays; the bundle only helps when relays have
 dropped them.
@@ -198,7 +205,7 @@ proxy-shopping（現金や地域の決済しか使えない店での買い物を
   （`apps/web/public/config.ps-main.json`）。目録があると、設定画面に候補のコーディネータが出て、ボタンで足せる。
 - **Go ノード**: `trust.coordinators` に鍵、`trust.bundle_urls` に events.json の URL（起動時と 10 分ごとに取得し、
   リレーのイベントと同じく検証して取り込む）。例は `lab/examples/ps-main-shopper.yaml`。
-- **MCP サーバ**: 同じ網・リレー・鍵・bundle の URL を設定する（変数名はその README）。
+- **MCP サーバー**（`io.github.pad01g/proxy-shopping`）: 既定の網 `ps-main` がこの登録簿（coordinator、`coordinators.json` の目録、`events.json`）をそのまま使う。信頼する coordinator を替えるときは `PS_COORDINATORS`。道具 `registry_entry` がここへの pull request 用のファイルを作る。
 
 ### 役割
 
