@@ -1,0 +1,7 @@
+{
+  "pk": "7a0a27bb7092dc59b5bfe195d9f0e0cf81c69373b0d702a41490ed45cfccbe39",
+  "contact": "github:pad01g",
+  "description": "The coordinator of this registry (pad01g/proxy-shopping-registry): delegates operators and signs the ps-main list of shoppers and escrows approved by merged pull requests.",
+  "url": "https://pad01g.github.io/proxy-shopping-registry/",
+  "bundle": "https://pad01g.github.io/proxy-shopping-registry/events.json"
+}

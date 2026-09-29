@@ -1,0 +1,22 @@
+# proxy-shopping-registry
+
+> Trust registry of the public ps-main network of proxy-shopping (a P2P network where a shopper buys for a user, paid in crypto, in shops that take only cash or local payments; an escrow rules disputes). The coordinator 7a0a27bb7092dc59b5bfe195d9f0e0cf81c69373b0d702a41490ed45cfccbe39 delegates (Nostr kind 30500) to the registry operator c1846b34ad9b13d28a602575ed6f762099b7300e0e1e819c585ae49b8c8c3118, which signs the ps-main list (kind 30501) of trusted shopper × escrow combinations. A merged pull request is the approval; CI signs and publishes after every merge.
+
+Use it: trust the coordinator key above (web app: Settings → trusted coordinators; Go node: `trust.coordinators`), network `ps-main`, relays wss://relay.damus.io, wss://nos.lol, wss://relay.primal.net, BTC signet with Esplora https://mempool.space/signet/api (no USDC on ps-main yet). Optionally add the trust bundle https://pad01g.github.io/proxy-shopping-registry/events.json (web app `trust_bundles`, Go node `trust.bundle_urls`) to get the signed events without relying on relays. Every event is verified by the client; the bundle adds no trust of its own.
+
+Join: open a pull request on https://github.com/pad01g/proxy-shopping-registry adding one file.
+- Shopper: `shoppers/<name>.json` {"pk", "contact", "description", "regions": cash regions like ["JP-13"], "payments": ["btc-signet"], "escrows": [escrow names]}.
+- Escrow: `escrows/<name>.json` {"pk", "contact", "description", "sla_days": 1-365}.
+- Operator: `operators/<name>.json` {"pk", "contact", "description", "regions"}; after the merge sign your own list (`psctl list`).
+- Coordinator directory: `coordinators/<name>.json` {"pk", "contact", "description", "url"?, "bundle"?}. Nobody is made a coordinator: users choose theirs; run your own registry by forking this one.
+- `pk` is the Nostr public key, 64 lowercase hex (x-only, not npub): `psctl keys --mnemonic-file <file>` (field nostr_pubkey) or the web app's Settings. `contact` and `description` are required; names are [a-z0-9-]+.
+- Revocation: move the file to `revoked/<name>.json` and add "role" and "reason".
+Pull requests may only touch coordinators/, operators/, shoppers/, escrows/ and revoked/.
+
+## Files
+
+- [events.json](https://pad01g.github.io/proxy-shopping-registry/events.json): the signed events (trust bundle): `{"network", "version", "coordinator", "operator", "relays", "events": [Nostr events]}`
+- [registry.json](https://pad01g.github.io/proxy-shopping-registry/registry.json): the same content, unsigned and readable, with the list entries
+- [coordinators.json](https://pad01g.github.io/proxy-shopping-registry/coordinators.json): the directory of coordinators users may choose
+- [README](https://github.com/pad01g/proxy-shopping-registry#readme): roles, step by step, revocation
+- [Protocol](https://github.com/pad01g/proxy-shopping-go/blob/main/docs/spec.md): spec §2 (delegations and lists), §3 (profiles)

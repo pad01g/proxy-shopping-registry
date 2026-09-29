@@ -1,0 +1,45 @@
+name: Validate
+# Pull requests: check the registry files. No secrets are available here, and nothing here reads a key.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      # The signing keys are used by scripts/, package*.json and .github/ after a merge. A pull request from somebody
+      # else may only add, change or remove registry entries, so that a merge cannot smuggle in code that reads the keys.
+      - name: Only registry files change
+        if: github.event.pull_request.user.login != github.repository_owner
+        run: |
+          git diff --name-only "origin/${{ github.base_ref }}...HEAD" > changed.txt
+          cat changed.txt
+          if grep -vE '^(coordinators|operators|shoppers|escrows|revoked)/[a-z0-9-]+\.json$' changed.txt; then
+            echo "::error::Pull requests may only change coordinators/, operators/, shoppers/, escrows/ and revoked/ (<name>.json). Open an issue for other changes."
+            exit 1
+          fi
+      - run: npm ci --ignore-scripts
+      # Compatibility with the web client's parsers. Skipped with a notice while pad01g/proxy-shopping-web is not public.
+      - name: Check out proxy-shopping-web (for the compatibility test)
+        id: web
+        continue-on-error: true
+        uses: actions/checkout@v5
+        with:
+          repository: pad01g/proxy-shopping-web
+          path: proxy-shopping-web
+      - name: Tests
+        env:
+          PS_WEB_DIR: ${{ github.workspace }}/proxy-shopping-web
+        run: |
+          if [ "${{ steps.web.outcome }}" != "success" ]; then echo "::notice::pad01g/proxy-shopping-web could not be checked out; the compatibility test is skipped"; fi
+          node --no-warnings --test scripts/*.test.ts
+      - run: node --no-warnings scripts/registry.ts validate

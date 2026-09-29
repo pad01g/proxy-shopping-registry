@@ -1,0 +1,87 @@
+name: Publish
+# After a merge to main: sign the events with the keys of the repository secrets, check them with the clients' own
+# parsers, send them to the ps-main relays and publish the site on GitHub Pages
+# (https://pad01g.github.io/proxy-shopping-registry/events.json).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      # pinned by package-lock.json; no install scripts in a job that later reads the keys
+      - run: npm ci --ignore-scripts
+      - name: Check out proxy-shopping-web (TS core parsers)
+        id: web
+        continue-on-error: true
+        uses: actions/checkout@v5
+        with:
+          repository: pad01g/proxy-shopping-web
+          path: proxy-shopping-web
+      - name: Check out proxy-shopping-go (Go trust store)
+        id: go
+        continue-on-error: true
+        uses: actions/checkout@v5
+        with:
+          repository: pad01g/proxy-shopping-go
+          path: proxy-shopping-go
+      - name: Tests
+        env:
+          PS_WEB_DIR: ${{ github.workspace }}/proxy-shopping-web
+        run: node --no-warnings --test scripts/*.test.ts
+      - name: Sign the events
+        env:
+          COORDINATOR_MNEMONIC: ${{ secrets.COORDINATOR_MNEMONIC }}
+          OPERATOR_MNEMONIC: ${{ secrets.OPERATOR_MNEMONIC }}
+        run: node --no-warnings scripts/registry.ts build site
+      - name: Verify (signatures, signers, content; the TS core's parsers when available)
+        env:
+          PS_WEB_DIR: ${{ github.workspace }}/proxy-shopping-web
+        run: node --no-warnings scripts/registry.ts verify site
+      - uses: actions/setup-go@v6
+        if: steps.go.outcome == 'success'
+        with:
+          go-version-file: proxy-shopping-go/node/go.mod
+          cache-dependency-path: proxy-shopping-go/node/go.sum
+      - name: The Go node's trust store accepts the events
+        if: steps.go.outcome == 'success'
+        working-directory: proxy-shopping-go/node
+        run: |
+          mkdir -p cmd/registrycheck && cp "$GITHUB_WORKSPACE/scripts/gocheck/main.go" cmd/registrycheck/
+          go run ./cmd/registrycheck "$GITHUB_WORKSPACE/site/events.json" "$(jq -r .pk "$GITHUB_WORKSPACE/coordinator.json")" ps-main "$(jq '.entries | length' "$GITHUB_WORKSPACE/site/registry.json")"
+      - name: Go check skipped
+        if: steps.go.outcome != 'success'
+        run: echo "::notice::pad01g/proxy-shopping-go could not be checked out; the Go compatibility check is skipped"
+      - name: Send to the ps-main relays
+        run: node --no-warnings scripts/registry.ts publish site
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,19 @@
+{
+  "name": "proxy-shopping-registry",
+  "private": true,
+  "type": "module",
+  "description": "PR-based trust registry of the ps-main proxy-shopping network: signs delegations (kind 30500) and the operator list (kind 30501)",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --no-warnings --test scripts/*.test.ts",
+    "validate": "node --no-warnings scripts/registry.ts validate"
+  },
+  "dependencies": {
+    "@noble/curves": "1.9.7",
+    "@scure/bip32": "1.7.0",
+    "@scure/bip39": "1.6.0",
+    "nostr-tools": "2.25.2"
+  }
+}
