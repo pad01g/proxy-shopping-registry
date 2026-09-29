@@ -21,6 +21,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
@@ -33,6 +34,7 @@ jobs:
         with:
           repository: pad01g/proxy-shopping-web
           path: proxy-shopping-web
+          persist-credentials: false
       - name: Check out proxy-shopping-go (Go trust store)
         id: go
         continue-on-error: true
@@ -40,6 +42,7 @@ jobs:
         with:
           repository: pad01g/proxy-shopping-go
           path: proxy-shopping-go
+          persist-credentials: false
       - name: Tests
         env:
           PS_WEB_DIR: ${{ github.workspace }}/proxy-shopping-web
