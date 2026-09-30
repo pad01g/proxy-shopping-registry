@@ -71,7 +71,7 @@ chain:
 `ps-main` already uses this registry (coordinator, `coordinators.json` directory and `events.json` bundle):
 
 ```sh
-claude mcp add proxy-shopping -- docker run -i --rm -v proxy-shopping-mcp:/data ghcr.io/pad01g/proxy-shopping-mcp:0.1.1
+claude mcp add proxy-shopping -- docker run -i --rm -v proxy-shopping-mcp:/data ghcr.io/pad01g/proxy-shopping-mcp:0.1.2
 ```
 
 `PS_COORDINATORS` replaces the trusted coordinators (comma separated pubkeys); `PS_CONFIG_URL` / `PS_CONFIG_FILE`
