@@ -2,5 +2,8 @@
   "pk": "2fa48aada4591e77ae00fb5cb6d5cf766b8f3408cbe660336d986b305e407d24",
   "contact": "github:pad01g",
   "description": "Test operator of the registry maintainer for end-to-end tests on real devices: lists one test shopper and one test escrow, for a test shop only, on signet.",
-  "regions": ["JP"]
+  "regions": [
+    "JP"
+  ],
+  "list_url": "https://gateway.tail2668e8.ts.net/proxy-shopping/operator/pad01g-device-test.json"
 }
