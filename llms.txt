@@ -7,7 +7,7 @@ Use it: trust the coordinator key above (web app: Settings → trusted coordinat
 Join: open a pull request on https://github.com/pad01g/proxy-shopping-registry adding one file.
 - Shopper: `shoppers/<name>.json` {"pk", "contact", "description", "regions": cash regions like ["JP-13"], "payments": ["btc-signet"], "escrows": [escrow names]}.
 - Escrow: `escrows/<name>.json` {"pk", "contact", "description", "sla_days": 1-365}.
-- Operator: `operators/<name>.json` {"pk", "contact", "description", "regions"}; after the merge sign your own list (`psctl list`).
+- Operator: `operators/<name>.json` {"pk", "contact", "description", "regions", "list_url"?}; after the merge sign your own list (`psctl list`). `list_url` (optional; one https URL or a list of up to 4, no credentials or fragment, at most 512 characters): where you host your signed bundle `{"events": [your kind 30501 list, the latest 30502/30503/10050 profiles of the shoppers and escrows you list]}` (`psctl list … --bundle-out <file>`); the coordinator's delegation carries one `["list_url", url]` tag per URL, and clients fetch the bundle over HTTPS, so no relay is needed for your list.
 - Coordinator directory: `coordinators/<name>.json` {"pk", "contact", "description", "url"?, "bundle"?}. Nobody is made a coordinator: users choose theirs; run your own registry by forking this one.
 - `pk` is the Nostr public key, 64 lowercase hex (x-only, not npub): `psctl keys --mnemonic-file <file>` (field nostr_pubkey) or the web app's Settings. `contact` and `description` are required; names are [a-z0-9-]+.
 - Revocation: move the file to `revoked/<name>.json` and add "role" and "reason".

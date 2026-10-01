@@ -309,3 +309,73 @@ test('COMPATIBILITY: the TS core (proxy-shopping-web) accepts the built events',
   );
   assert.equal(core.effectiveCombinations({ coordinators: [pk()], network: 'ps-main', events }).entries.length, 0, 'nothing without trusting the coordinator');
 });
+
+test('list_url of an operator becomes list_url tags of its delegation (spec §2.2), not of a revoked one', () => {
+  const one = pk();
+  const two = pk();
+  const none = pk();
+  const gone = pk();
+  const dir = registry({
+    'operator.json': { pk: OPER.pk, name: 'test registry', list_url: 'https://registry.example/bundle.json' },
+    'operators/one.json': { pk: one, contact: 'x', description: 'x', regions: ['JP-27'], list_url: 'https://osaka.example/ps/bundle.json' },
+    'operators/two.json': { pk: two, contact: 'x', description: 'x', regions: ['JP-13'], list_url: ['https://a.example/b.json', 'https://mirror.example/b.json?v=1'] },
+    'operators/none.json': { pk: none, contact: 'x', description: 'x', regions: ['JP'] },
+    'revoked/gone.json': { role: 'operator', pk: gone, contact: 'x', description: 'x', regions: ['JP'], list_url: 'https://gone.example/b.json', reason: 'stopped' },
+  });
+  initRepo(dir, 1_800_000_000);
+  const { events } = build(dir);
+  const del = (op: string) => events.find((e) => e.kind === 30500 && tag(e, 'd') === op)!;
+  const base = (op: string, revoked: boolean) => [['d', op], ['v', '1800000000'], ['network', 'ps-main'], ['p', op], ['revoked', String(revoked)]];
+  assert.deepEqual(del(one).tags, [...base(one, false), ['list_url', 'https://osaka.example/ps/bundle.json']], 'a string is one tag, after the others');
+  assert.deepEqual(del(two).tags, [...base(two, false), ['list_url', 'https://a.example/b.json'], ['list_url', 'https://mirror.example/b.json?v=1']]);
+  assert.deepEqual(del(none).tags, base(none, false), 'no field, no tag');
+  assert.deepEqual(del(gone).tags, base(gone, true), 'a revoked delegation has no list_url');
+  assert.deepEqual(del(OPER.pk).tags, [...base(OPER.pk, false), ['list_url', 'https://registry.example/bundle.json']], 'operator.json may have one too');
+  const reg = JSON.parse(readFileSync(join(dir, 'site/registry.json'), 'utf8'));
+  assert.deepEqual(reg.operators.one.list_url, ['https://osaka.example/ps/bundle.json'], 'normalized to a list');
+  assert.equal(reg.operators.none.list_url, undefined);
+
+  // verify compares the tags with the files
+  assert.ok(run(dir, ['verify', join(dir, 'site')]).ok);
+  write(dir, { 'operators/one.json': { pk: one, contact: 'x', description: 'x', regions: ['JP-27'], list_url: 'https://evil.example/b.json' } });
+  const bad = run(dir, ['verify', join(dir, 'site')]);
+  assert.ok(!bad.ok);
+  assert.match(bad.out, /content or tags differ from the registry files/);
+});
+
+test('bad list_url values are reported', () => {
+  const op = (list_url: unknown) => ({ pk: pk(), contact: 'x', description: 'x', regions: ['JP'], list_url });
+  const dir = registry({
+    'operators/http.json': op('http://insecure.example/b.json'),
+    'operators/relative.json': op('/bundle.json'),
+    'operators/garbage.json': op('https://exa mple/b.json'),
+    'operators/nohost.json': op('https:///b.json'),
+    'operators/creds.json': op('https://user:pw@example.org/b.json'),
+    'operators/fragment.json': op('https://example.org/b.json#x'),
+    'operators/long.json': op(`https://example.org/${'a'.repeat(600)}`),
+    'operators/dup.json': op(['https://example.org/b.json', 'https://EXAMPLE.org/b.json']),
+    'operators/many.json': op(['https://a.example/', 'https://b.example/', 'https://c.example/', 'https://d.example/', 'https://e.example/']),
+    'operators/empty.json': op([]),
+    'operators/number.json': op(42),
+    'operators/inner.json': op(['https://a.example/', 7]),
+  });
+  const r = run(dir, ['validate']);
+  assert.ok(!r.ok);
+  const expect: [string, string][] = [
+    ['operators/http.json', 'is not https'],
+    ['operators/relative.json', 'is not an absolute URL'],
+    ['operators/garbage.json', 'contains spaces'],
+    ['operators/nohost.json', 'has no host'],
+    ['operators/creds.json', 'must not contain credentials'],
+    ['operators/fragment.json', 'must not have a fragment'],
+    ['operators/long.json', 'is longer than 512 characters'],
+    ['operators/dup.json', 'is listed twice'],
+    ['operators/many.json', 'list_url must be an https URL or a list of 1-4'],
+    ['operators/empty.json', 'list_url must be an https URL or a list of 1-4'],
+    ['operators/number.json', 'list_url must be an https URL or a list of 1-4'],
+    ['operators/inner.json', 'is not a string'],
+  ];
+  for (const [file, msg] of expect) {
+    assert.ok(r.out.split('\n').some((l) => l.includes(`${file}: `) && l.includes(msg)), `${file}: ${msg}\n--- got:\n${r.out}`);
+  }
+});
