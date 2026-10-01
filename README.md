@@ -22,8 +22,8 @@ and publishes them to the ps-main relays and to GitHub Pages:
 
 What is signed (protocol: [spec §2](https://github.com/pad01g/proxy-shopping-go/blob/main/docs/spec.md)):
 
-- kind **30500** delegations by the coordinator: to the registry operator, to every `operators/<name>.json`, and a
-  revoked one for every operator in `revoked/`;
+- kind **30500** delegations by the coordinator: to the registry operator, to every `operators/<name>.json` (with a
+  `["list_url", "https://…"]` tag per `list_url` of the file), and a revoked one for every operator in `revoked/`;
 - one kind **30501** list for `ps-main` by the registry operator: every `shoppers/<name>.json` × each escrow it
   names that is in `escrows/`, one entry per cash region of the shopper, with the ps-main relays and chain.
 
@@ -150,6 +150,24 @@ the work: a shopper's entry must carry the key of the shopper node.
      --publish wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net
    ```
    `list.json` is the list content of spec §2.3 with `"network": "ps-main"` (entries with `tags: []`, `shops: ["*"]`).
+4. Optional, recommended: host your signed bundle at an https URL and name it in `list_url` of your file:
+   ```json
+   {
+     "pk": "<nostr_pubkey>",
+     "contact": "github:<you>",
+     "description": "Whose shoppers and escrows you list and how you check them",
+     "regions": ["JP-27"],
+     "list_url": "https://example.org/ps-main/bundle.json"
+   }
+   ```
+   The bundle (spec §2.6) is `{"events": […]}` with your kind 30501 list and the latest 30502 / 30503 / 10050
+   profiles of the shoppers and escrows you list, exactly as they signed them; `psctl list … --bundle-out <file>`
+   (proxy-shopping-go) writes it. Rebuild and re-upload it whenever you sign a new list version. The coordinator's
+   delegation to you then carries one `["list_url", <url>]` tag per URL, so the URL is signed as part of the
+   delegation. Clients fetch the bundle over HTTPS (redirects only to the same origin, at most 2 MiB) and verify
+   every event, so the registry no longer needs relays for your list; publishing to relays remains optional.
+   `list_url` is one URL or a list of up to 4 (mirrors): absolute `https://`, no credentials, no `#fragment`, at most
+   512 characters each, no duplicates. Changing it is a pull request like any other change to your file.
 
 ### Coordinator (being listed in the directory)
 
@@ -230,6 +248,13 @@ proxy-shopping（現金や地域の決済しか使えない店での買い物を
 - shopper: `regions`（現金の地域、`JP-13` など）、`payments`（今は `btc-signet`）、`escrows`（組む escrow の名前）。
 - escrow: `sla_days`（1–365、紛争の申立から裁定までの日数の上限）。
 - オペレータ: `regions`。マージ後に `psctl list --mnemonic-file … --file list.json --version "$(date +%s)" --publish wss://…` で一覧に署名してリレーに出す。
+  任意（推奨）で `list_url`: 署名済みの束（仕様 §2.6）を置いた https の URL（1 つの文字列か、最大 4 つのリスト）。
+  束は `{"events": […]}` で、自分の 30501 の一覧と、一覧に載せた shopper・escrow の最新の 30502 / 30503 / 10050 の
+  プロフィール（本人の署名のまま）を入れたもの。`psctl list … --bundle-out <ファイル>`（proxy-shopping-go）が作る。
+  一覧の版を出すたびに作り直して置き直す。コーディネータの委任書に URL ごとに `["list_url", <url>]` のタグが付く
+  （URL も委任として署名される）。クライアントは束を HTTPS で取り寄せて 1 件ずつ検証するので、登録簿はその一覧の
+  ためにリレーを必要としない（リレーへの公開は任意で続けてよい）。URL は絶対の `https://`、認証情報と `#` なし、
+  512 文字以内、重複なし。
 
 **失効**は `operators/`・`shoppers/`・`escrows/` の `<name>.json` を `revoked/<name>.json` に移し、`"role"` と
 `"reason"` を足す PR。オペレータなら次の版で新しい版の失効の委任書が出るので、古い一覧を持っているクライアントも

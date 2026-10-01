@@ -6,7 +6,8 @@
 //
 // What is signed (all with network ps-main, v = created_at = the commit time of HEAD, so every merge is newer):
 //   - kind 30500 by the coordinator (coordinator.json) to the registry operator (operator.json)
-//   - kind 30500 by the coordinator to every operators/<name>.json, and a revoked one for every revoked operator
+//   - kind 30500 by the coordinator to every operators/<name>.json, and a revoked one for every revoked operator;
+//     a delegation carries one ["list_url", url] tag per list_url of the operator's file (spec §2.2, §2.6)
 //   - kind 30501 by the registry operator: every shoppers/<name>.json × each escrow it names that is in escrows/,
 //     one entry per cash region of the shopper
 // The keys are NIP-06 keys (m/44'/1237'/0'/0/0) of BIP39 mnemonics held only in repository secrets.
@@ -37,7 +38,7 @@ const ROLE_DIRS = ['coordinators', 'operators', 'shoppers', 'escrows', 'revoked'
 
 type Base = { name: string; pk: string; contact: string; description: string };
 export type Coordinator = Base & { url?: string; bundle?: string };
-export type Operator = Base & { regions: string[] };
+export type Operator = Base & { regions: string[]; list_url?: string[] };
 export type Shopper = Base & { regions: string[]; payments: string[]; escrows: string[] };
 export type Escrow = Base & { sla_days: number };
 export type Revoked = Base & { role: 'operator' | 'shopper' | 'escrow'; reason: string };
@@ -54,6 +55,8 @@ export type Registry = {
   coordinator: string;
   operator: string;
   operatorName: string;
+  /** list_url of operator.json: where the registry operator's own bundle is, when it says so */
+  operatorListUrl?: string[];
   coordinators: Map<string, Coordinator>;
   operators: Map<string, Operator>;
   shoppers: Map<string, Shopper>;
@@ -129,6 +132,56 @@ export function isPublicKey(v: unknown): v is string {
 }
 const httpsUrl = (v: unknown): v is string => typeof v === 'string' && v.length <= 256 && /^https:\/\/[^\s"<>]+$/.test(v);
 
+export const LIST_URL_MAX = 4;
+export const LIST_URL_LEN = 512;
+
+/**
+ * list_url (spec §2.2): one https URL or a list of 1-4, where the operator hosts its signed bundle (§2.6). Normalized
+ * to a list. Absolute https only, with a host, without credentials or fragment, at most 512 characters, no duplicates.
+ */
+export function listUrls(file: string, v: unknown, problems: Problems): string[] | undefined {
+  const urls = typeof v === 'string' ? [v] : v;
+  const what = `list_url must be an https URL or a list of 1-${LIST_URL_MAX} https URLs where you host your signed bundle`;
+  if (!Array.isArray(urls) || urls.length === 0 || urls.length > LIST_URL_MAX) {
+    problems.add(file, `${what}, got ${JSON.stringify(v)}`);
+    return undefined;
+  }
+  let ok = true;
+  const seen = new Set<string>();
+  for (const u of urls) {
+    const bad = (why: string) => {
+      problems.add(file, `list_url: ${JSON.stringify(typeof u === 'string' && u.length > 80 ? `${u.slice(0, 80)}…` : u)} ${why}`);
+      ok = false;
+    };
+    if (typeof u !== 'string') {
+      bad('is not a string');
+      continue;
+    }
+    if (u.length > LIST_URL_LEN) {
+      bad(`is longer than ${LIST_URL_LEN} characters`);
+      continue;
+    }
+    if (/[\s\x00-\x1f\x7f"<>\\]/.test(u)) {
+      bad('contains spaces, control characters or one of " < > \\');
+      continue;
+    }
+    let url: URL;
+    try {
+      url = new URL(u);
+    } catch {
+      bad('is not an absolute URL');
+      continue;
+    }
+    if (url.protocol !== 'https:' || !u.toLowerCase().startsWith('https://')) bad('is not https (clients fetch bundles over HTTPS only)');
+    else if (!url.hostname || !/^https:\/\/[^/?#]/i.test(u)) bad('has no host');
+    else if (url.username || url.password) bad('must not contain credentials');
+    else if (u.includes('#')) bad('must not have a fragment (#...)');
+    else if (seen.has(url.href)) bad('is listed twice');
+    else seen.add(url.href);
+  }
+  return ok ? (urls as string[]) : undefined;
+}
+
 function known(file: string, o: Record<string, unknown>, fields: string[], problems: Problems): void {
   for (const k of Object.keys(o)) if (!fields.includes(k)) problems.add(file, `unknown field "${k}" (allowed: ${fields.join(', ')})`);
 }
@@ -179,14 +232,15 @@ export function load(problems: Problems): Registry {
     if (other) problems.add(file, `public key already used by ${other}`);
     else keys.set(pk, file);
   };
-  const root = (file: string): { pk: string; name?: string } => {
+  const root = (file: string, withListUrl = false): { pk: string; name?: string; list_url?: string[] } => {
     const v = readJson(file, problems) as Record<string, unknown> | undefined;
     if (!v) return { pk: '' };
     if (!isPublicKey(v.pk)) problems.add(file, 'needs pk: a Nostr public key, 64 lowercase hex characters');
-    return { pk: typeof v.pk === 'string' ? v.pk : '', name: typeof v.name === 'string' ? v.name : undefined };
+    const list_url = !withListUrl || v.list_url === undefined ? undefined : listUrls(file, v.list_url, problems);
+    return { pk: typeof v.pk === 'string' ? v.pk : '', name: typeof v.name === 'string' ? v.name : undefined, ...(list_url ? { list_url } : {}) };
   };
   const coordinator = root('coordinator.json').pk;
-  const op = root('operator.json');
+  const op = root('operator.json', true);
   const operator = op.pk;
   if (coordinator && coordinator === operator) problems.add('operator.json', 'the registry operator needs its own key, not the coordinator key');
   if (coordinator) unique('coordinator.json', coordinator);
@@ -217,16 +271,17 @@ export function load(problems: Problems): Registry {
   const operators = new Map<string, Operator>();
   for (const [name, o] of entries('operators', problems)) {
     const file = `operators/${name}.json`;
-    known(file, o, ['pk', 'contact', 'description', 'regions'], problems);
+    known(file, o, ['pk', 'contact', 'description', 'regions', 'list_url'], problems);
     const b = base(file, name, o, problems, 'operator');
     const r = regions(file, o.regions, problems);
-    if (!b || !r) continue;
+    const urls = o.list_url === undefined ? [] : listUrls(file, o.list_url, problems);
+    if (!b || !r || !urls) continue;
     if (b.pk === operator) {
       problems.add(file, 'this is the registry operator of operator.json, which is delegated already');
       continue;
     }
     unique(file, b.pk);
-    operators.set(name, { ...b, regions: r });
+    operators.set(name, { ...b, regions: r, ...(urls.length ? { list_url: urls } : {}) });
   }
 
   const escrows = new Map<string, Escrow>();
@@ -281,7 +336,8 @@ export function load(problems: Problems): Registry {
       problems.add(file, `role must be "operator", "shopper" or "escrow" (the directory the file came from), got ${JSON.stringify(role)}`);
       continue;
     }
-    const extra = { operator: ['regions'], shopper: ['regions', 'payments', 'escrows'], escrow: ['sla_days'] }[role];
+    // a moved operator file may keep its list_url; a revoked delegation carries none
+    const extra = { operator: ['regions', 'list_url'], shopper: ['regions', 'payments', 'escrows'], escrow: ['sla_days'] }[role];
     known(file, o, ['role', 'reason', 'pk', 'contact', 'description', ...extra], problems);
     const b = base(file, name, o, problems, role);
     if (!text(o.reason, 300)) problems.add(file, 'reason is required (why the entry was revoked), at most 300 characters');
@@ -300,7 +356,7 @@ export function load(problems: Problems): Registry {
       else problems.warn(`shoppers/${name}.json`, `there is no escrows/${e}.json (yet); no entries with it until it is added`);
     }
   }
-  return { coordinator, operator, operatorName: op.name ?? 'proxy-shopping-registry', coordinators, operators, shoppers, escrows, revoked };
+  return { coordinator, operator, operatorName: op.name ?? 'proxy-shopping-registry', ...(op.list_url ? { operatorListUrl: op.list_url } : {}), coordinators, operators, shoppers, escrows, revoked };
 }
 
 // ---- events
@@ -337,16 +393,23 @@ type Template = { kind: number; created_at: number; tags: string[][]; content: s
 
 /** The unsigned events of the registry, in the order they are published (delegations before the list). */
 export function templates(reg: Registry, version: number): { signer: 'coordinator' | 'operator'; t: Template }[] {
-  const delegation = (operator: string, revoked: boolean, note: string): Template => ({
+  const delegation = (operator: string, revoked: boolean, note: string, listUrl: string[] = []): Template => ({
     kind: KIND.delegation,
     created_at: version,
-    tags: [['d', operator], ['v', String(version)], ['network', NETWORK], ['p', operator], ['revoked', String(revoked)]],
+    tags: [
+      ['d', operator],
+      ['v', String(version)],
+      ['network', NETWORK],
+      ['p', operator],
+      ['revoked', String(revoked)],
+      ...(revoked ? [] : listUrl.map((u) => ['list_url', u])),
+    ],
     content: JSON.stringify({ note }),
   });
   const out: { signer: 'coordinator' | 'operator'; t: Template }[] = [
-    { signer: 'coordinator', t: delegation(reg.operator, false, `registry operator (${REPO})`) },
+    { signer: 'coordinator', t: delegation(reg.operator, false, `registry operator (${REPO})`, reg.operatorListUrl) },
   ];
-  for (const o of reg.operators.values()) out.push({ signer: 'coordinator', t: delegation(o.pk, false, o.name) });
+  for (const o of reg.operators.values()) out.push({ signer: 'coordinator', t: delegation(o.pk, false, o.name, o.list_url) });
   for (const r of reg.revoked.values()) {
     if (r.role === 'operator') out.push({ signer: 'coordinator', t: delegation(r.pk, true, `${r.name}: ${r.reason}`) });
   }
@@ -400,7 +463,7 @@ export function registryJson(reg: Registry, version: number): Record<string, unk
     network: NETWORK,
     version,
     coordinator: reg.coordinator,
-    operator: { pk: reg.operator, name: reg.operatorName },
+    operator: { pk: reg.operator, name: reg.operatorName, ...(reg.operatorListUrl ? { list_url: reg.operatorListUrl } : {}) },
     relays: RELAYS,
     chain: CHAIN,
     events: `${SITE}/events.json`,
@@ -482,7 +545,7 @@ Escrows:
 ${[...reg.escrows.values()].map((e) => line(e, `SLA ${e.sla_days} days`)).join('\n') || '- none yet'}
 
 Delegated operators (besides the registry operator \`${reg.operator}\`):
-${[...reg.operators.values()].map((o) => line(o, `regions ${o.regions.join(' ')}`)).join('\n') || '- none yet'}
+${[...reg.operators.values()].map((o) => line(o, `regions ${o.regions.join(' ')}${o.list_url ? `, list_url ${o.list_url.join(' ')}` : ''}`)).join('\n') || '- none yet'}
 
 Coordinator directory:
 ${[...reg.coordinators.values()].map((c) => line(c, c.url ?? '')).join('\n') || '- none yet'}
